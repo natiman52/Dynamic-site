@@ -1,4 +1,5 @@
 # Dynamic website with Intent
 
-### uses openAI to understand intent
-### add api key to index.html
+### 1) uses openAI to understand intent
+
+* add (OPENAI) api_key to index.html
