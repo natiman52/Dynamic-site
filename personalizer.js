@@ -1,7 +1,7 @@
 /**
  * IntentFinder Personalizer — AI-only copy; layout from soft / neo / cyber themes.
- * No static templates: intent is analyzed then AI generates all copy; layout style
- * (soft, neo, cyber) picks header/hero/card/footer HTML from theme skeletons.
+ * Supports OpenAI and local Ollama: set aiProvider to 'openai', 'ollama', or 'auto'.
+ * With Ollama: run `ollama serve` and set ollamaBaseUrl (default http://localhost:11434), ollamaModel (e.g. llama3.2).
  */
 
 (function () {
@@ -16,7 +16,24 @@
     },
     openaiModel: 'gpt-4o-mini',
     openaiMaxTokens: 200,
-    openaiGenerateMaxTokens: 700
+    openaiGenerateMaxTokens: 700,
+    // Ollama (local): set ollamaBaseUrl (e.g. http://localhost:11434) and ollamaModel (e.g. llama3.2). Use aiProvider: 'ollama' or 'auto'.
+    get ollamaBaseUrl() {
+      return (typeof window != 'undefined' && window.PersonalizerConfig && window.PersonalizerConfig.ollamaBaseUrl) || 'http://localhost:11434';
+    },
+    get ollamaModel() {
+      return (typeof window != 'undefined' && window.PersonalizerConfig && window.PersonalizerConfig.ollamaModel) || 'llama3.2';
+    },
+    get aiProvider() {
+      var p = (typeof window != 'undefined' && window.PersonalizerConfig && window.PersonalizerConfig.aiProvider) || 'auto';
+      return (p == 'openai' || p == 'ollama' || p == 'auto') ? p : 'auto';
+    },
+    get ollamaRequestTimeout() {
+      return (typeof window != 'undefined' && window.PersonalizerConfig && window.PersonalizerConfig.ollamaRequestTimeout) || 120000;
+    },
+    get ollamaKeepAlive() {
+      return (typeof window != 'undefined' && window.PersonalizerConfig && window.PersonalizerConfig.ollamaKeepAlive) || '10m';
+    }
   };
 
   // Expanded intents (categories for AI)
@@ -143,6 +160,96 @@
     try { return JSON.parse(m[0]); } catch (_) { return null; }
   }
 
+  // Resolve which AI provider to use: 'openai' if key + (provider is openai or auto), else 'ollama' if provider is ollama or auto
+  function resolveProvider() {
+    var p = CONFIG.aiProvider;
+    if (p === 'openai' && CONFIG.openaiApiKey) return 'openai';
+    if (p === 'ollama') return 'ollama';
+    if (p === 'auto') return CONFIG.openaiApiKey ? 'openai' : 'ollama';
+    return null;
+  }
+
+  function hasAIProvider() {
+    return resolveProvider() !== null;
+  }
+
+  // Single chat completion: OpenAI or Ollama. messages = [{ role, content }], returns content string or null
+  async function chatCompletion(messages, maxTokens, options) {
+    options = options || {};
+    var provider = resolveProvider();
+    if (!provider) return null;
+
+    if (provider === 'openai') {
+      try {
+        var res = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + CONFIG.openaiApiKey },
+          body: JSON.stringify({
+            model: CONFIG.openaiModel,
+            max_tokens: maxTokens,
+            messages: messages,
+            temperature: options.temperature != null ? options.temperature : 0.35
+          })
+        });
+        if (!res.ok) throw new Error('OpenAI ' + res.status);
+        var data = await res.json();
+        var content = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+        return content || null;
+      } catch (err) {
+        if (CONFIG.debug) console.warn('OpenAI chat failed:', err.message);
+        return null;
+      }
+    }
+
+    if (provider === 'ollama') {
+      var url = (CONFIG.ollamaBaseUrl || '').replace(/\/$/, '') + '/api/chat';
+      var body = {
+        model: CONFIG.ollamaModel,
+        messages: messages,
+        stream: false,
+        keep_alive: CONFIG.ollamaKeepAlive || '10m',
+        options: { num_predict: maxTokens, temperature: options.temperature != null ? options.temperature : 0.35 }
+      };
+      if (options.format === 'json') body.format = 'json';
+      var timeoutMs = CONFIG.ollamaRequestTimeout || 120000;
+      var doRequest = function () {
+        var controller = new AbortController();
+        var timeoutId = setTimeout(function () { controller.abort(); }, timeoutMs);
+        return fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+          signal: controller.signal
+        }).then(function (res) {
+          clearTimeout(timeoutId);
+          return res;
+        }).catch(function (err) {
+          clearTimeout(timeoutId);
+          throw err;
+        });
+      };
+      var lastErr;
+      for (var attemptCount = 0; attemptCount < 2; attemptCount++) {
+        try {
+          if (attemptCount > 0) await new Promise(function (r) { setTimeout(r, 2000); });
+          var ollamaRes = await doRequest();
+          if (!ollamaRes.ok) throw new Error('Ollama ' + ollamaRes.status);
+          var ollamaData = await ollamaRes.json();
+          var text = ollamaData.message && ollamaData.message.content;
+          if (text) return text;
+        } catch (err) {
+          lastErr = err;
+          if (CONFIG.debug) console.warn('Ollama attempt ' + (attemptCount + 1) + ' failed:', err.message);
+          if (err.name === 'AbortError' && CONFIG.debug) console.warn('Ollama: timed out after ' + (timeoutMs / 1000) + 's. Model may be loading; retrying once in 2s.');
+        }
+      }
+      if (CONFIG.debug && lastErr) console.warn('Ollama chat failed after retry:', lastErr.message);
+      return null;
+    }
+
+    return null;
+  }
+
   var GENERATED_KEYS = ['headline', 'subheadline', 'cta_text', 'cta_link', 'section_heading', 'section_subheading', 'strip_heading', 'strip_subheading', 'strip_cta_text', 'strip_cta_link', 'badge', 'layout_style', 'nav_links'];
 
   function sanitizeGenerated(obj) {
@@ -161,10 +268,9 @@
   }
 
   async function classifyAndGenerateWithAI() {
-    var key = CONFIG.openaiApiKey;
     var ctx = buildContextForOpenAI();
     var rawQuery = (ctx.query || '').trim();
-    if (!key || !rawQuery) return null;
+    if (!hasAIProvider() || !rawQuery) return null;
 
     var systemPrompt = [
       'You are a personalization engine for an e-commerce site selling computer monitors.',
@@ -178,60 +284,41 @@
 
     var userContent = 'Visitor intent: "' + rawQuery.replace(/"/g, '\\"') + '". UTM: "' + (ctx.utm_campaign || '') + '". Referrer: ' + (ctx.referrer || 'none') + '.';
 
-    try {
-      var res = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
-        body: JSON.stringify({
-          model: CONFIG.openaiModel,
-          max_tokens: CONFIG.openaiGenerateMaxTokens,
-          messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userContent }],
-          temperature: 0.35
-        })
-      });
-      if (!res.ok) throw new Error('OpenAI ' + res.status);
-      var data = await res.json();
-      var content = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
-      var obj = parseJsonFromResponse(content);
-      if (!obj || !obj.intent || VALID_INTENTS.indexOf(obj.intent) === -1) return null;
-      var generated = sanitizeGenerated(obj);
-      if (!generated) return null;
-      return {
-        intent: obj.intent,
-        signals: ['openai: ' + (obj.reason || '')],
-        visitor_context: typeof obj.visitor_context === 'string' ? obj.visitor_context.trim() : '',
-        generatedContent: generated
-      };
-    } catch (err) {
-      if (CONFIG.debug) console.warn('Personalizer AI failed:', err.message);
-      return null;
-    }
+    var content = await chatCompletion(
+      [{ role: 'system', content: systemPrompt }, { role: 'user', content: userContent }],
+      CONFIG.openaiGenerateMaxTokens,
+      { temperature: 0.35, format: 'json' }
+    );
+    if (!content) return null;
+    var obj = parseJsonFromResponse(content);
+    if (!obj || !obj.intent || VALID_INTENTS.indexOf(obj.intent) === -1) return null;
+    var generated = sanitizeGenerated(obj);
+    if (!generated) return null;
+    var provider = resolveProvider();
+    return {
+      intent: obj.intent,
+      signals: [(provider || 'ai') + ': ' + (obj.reason || '')],
+      visitor_context: typeof obj.visitor_context === 'string' ? obj.visitor_context.trim() : '',
+      generatedContent: generated
+    };
   }
 
   async function detectIntentOpenAI() {
-    if (!CONFIG.openaiApiKey) return null;
+    if (!hasAIProvider()) return null;
     var ctx = buildContextForOpenAI();
     if ((ctx.query || '').trim()) return null;
     var systemPrompt = 'Classify visitor intent for a monitor e-commerce site. Return JSON: {"intent": "...", "reason": "..."}. Intent must be one of: BUY_NOW, COMPARE, USE_CASE, BUDGET, GAMING, PROFESSIONAL, CREATIVE, FAMILY, EXPLORE, SUPPORT, DEALS, DEFAULT.';
-    try {
-      var res = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + CONFIG.openaiApiKey },
-        body: JSON.stringify({
-          model: CONFIG.openaiModel,
-          max_tokens: CONFIG.openaiMaxTokens,
-          messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: 'referrer: ' + ctx.referrer + ', utm: ' + ctx.utm_campaign }],
-          temperature: 0.2
-        })
-      });
-      if (!res.ok) return null;
-      var data = await res.json();
-      var content = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
-      var obj = parseJsonFromResponse(content);
-      if (obj && obj.intent && VALID_INTENTS.indexOf(obj.intent) !== -1) {
-        return { intent: obj.intent, signals: ['openai: ' + (obj.reason || '')] };
-      }
-    } catch (_) {}
+    var content = await chatCompletion(
+      [{ role: 'system', content: systemPrompt }, { role: 'user', content: 'referrer: ' + ctx.referrer + ', utm: ' + ctx.utm_campaign }],
+      CONFIG.openaiMaxTokens,
+      { temperature: 0.2, format: 'json' }
+    );
+    if (!content) return null;
+    var obj = parseJsonFromResponse(content);
+    if (obj && obj.intent && VALID_INTENTS.indexOf(obj.intent) !== -1) {
+      var provider = resolveProvider();
+      return { intent: obj.intent, signals: [(provider || 'ai') + ': ' + (obj.reason || '')] };
+    }
     return null;
   }
 
@@ -269,32 +356,21 @@
   }
 
   async function generateCopyForIntent(intent) {
-    var key = CONFIG.openaiApiKey;
-    if (!key) return null;
+    if (!hasAIProvider()) return null;
     var systemPrompt = [
       'Generate tailored e-commerce copy for a monitor store. Intent category: ' + intent + '.',
       'Return ONLY a JSON object with: layout_style (one of soft, neo, cyber), badge, headline, subheadline, cta_text, cta_link, section_heading, section_subheading, strip_heading, strip_subheading, strip_cta_text, strip_cta_link, nav_links (array of {label, href}).',
       'Match tone to intent: GAMING=bold/cyber, CREATIVE/FAMILY/BUDGET=soft, COMPARE/EXPLORE/PRO=neo. No markdown.'
     ].join(' ');
-    try {
-      var res = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
-        body: JSON.stringify({
-          model: CONFIG.openaiModel,
-          max_tokens: CONFIG.openaiGenerateMaxTokens,
-          messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: 'Generate copy for intent: ' + intent }],
-          temperature: 0.35
-        })
-      });
-      if (!res.ok) return null;
-      var data = await res.json();
-      var content = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
-      var obj = parseJsonFromResponse(content);
-      if (!obj) return null;
-      var generated = sanitizeGenerated(obj);
-      return generated;
-    } catch (_) { return null; }
+    var content = await chatCompletion(
+      [{ role: 'system', content: systemPrompt }, { role: 'user', content: 'Generate copy for intent: ' + intent }],
+      CONFIG.openaiGenerateMaxTokens,
+      { temperature: 0.35, format: 'json' }
+    );
+    if (!content) return null;
+    var obj = parseJsonFromResponse(content);
+    if (!obj) return null;
+    return sanitizeGenerated(obj);
   }
 
   async function detectIntent() {
@@ -397,7 +473,7 @@
     }
     return detectIntent()
       .then(function (intentResult) {
-        if (!intentResult.generatedContent && CONFIG.openaiApiKey && intentResult.intent) {
+        if (!intentResult.generatedContent && hasAIProvider() && intentResult.intent) {
           return generateCopyForIntent(intentResult.intent).then(function (gen) {
             if (gen) intentResult.generatedContent = gen;
             return intentResult;
@@ -443,6 +519,9 @@
     detectIntent: detectIntent,
     getDecision: getDecision,
     inject: inject,
+    chatCompletion: chatCompletion,
+    resolveProvider: resolveProvider,
+    hasAIProvider: hasAIProvider,
     ASSETS: ASSETS,
     CONFIG: CONFIG,
     LAYOUTS: LAYOUTS,

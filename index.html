@@ -238,9 +238,16 @@
     </div>
   </footer>
 
-  <!-- Set openaiApiKey for AI-driven intent + generated copy; leave '' for rule-based + templates only -->
+  <!-- AI: OpenAI or Ollama. For Ollama run `ollama serve` and `ollama run <model>` first; serve this page from localhost to avoid CORS. -->
   <script>
-    window.PersonalizerConfig = { openaiApiKey: 'API_KEY' };
+    window.PersonalizerConfig = {
+      openaiApiKey: '',
+      aiProvider: 'auto',
+      ollamaBaseUrl: 'http://localhost:11434',
+      ollamaModel: 'qwen2.5-coder:3b',
+      ollamaRequestTimeout: 120000,
+      ollamaKeepAlive: '10m'
+    };
   </script>
   <script src="personalizer.js"></script>
   <script>
