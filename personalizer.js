@@ -21,6 +21,16 @@
     openaiModel: 'gpt-4o-mini',
     openaiMaxTokens: 200,
     openaiGenerateMaxTokens: 700,
+    // OpenRouter (hosted): set openrouterApiKey and optionally openrouterBaseUrl (default https://api.openrouter.ai) and openrouterModel.
+    get openrouterApiKey() {
+      return (typeof window !== 'undefined' && window.PersonalizerConfig && window.PersonalizerConfig.openrouterApiKey) || '';
+    },
+    get openrouterBaseUrl() {
+      return (typeof window !== 'undefined' && window.PersonalizerConfig && window.PersonalizerConfig.openrouterBaseUrl) || 'https://api.openrouter.ai';
+    },
+    get openrouterModel() {
+      return (typeof window !== 'undefined' && window.PersonalizerConfig && window.PersonalizerConfig.openrouterModel) || 'gpt-4o-mini';
+    },
     // Ollama (local): set ollamaBaseUrl (e.g. http://localhost:11434) and ollamaModel (e.g. llama3.2). Use aiProvider: 'ollama' or 'auto'.
     get ollamaBaseUrl() {
       return (typeof window != 'undefined' && window.PersonalizerConfig && window.PersonalizerConfig.ollamaBaseUrl) || 'http://localhost:11434';
@@ -30,7 +40,7 @@
     },
     get aiProvider() {
       var p = (typeof window != 'undefined' && window.PersonalizerConfig && window.PersonalizerConfig.aiProvider) || 'auto';
-      return (p == 'openai' || p == 'ollama' || p == 'auto') ? p : 'auto';
+      return (p == 'openai' || p == 'openrouter' || p == 'ollama' || p == 'auto') ? p : 'auto';
     },
     get ollamaRequestTimeout() {
       return (typeof window != 'undefined' && window.PersonalizerConfig && window.PersonalizerConfig.ollamaRequestTimeout) || 120000;
@@ -101,7 +111,7 @@
     { image: 'https://images.unsplash.com/photo-1496181133206-80ce9b88a853?w=600&q=80', title: 'Office Dual 24" FHD', subtitle: 'IPS, 75Hz, USB-C', price: '$229', link: '/products/office-24', badge: '' },
     { image: 'https://images.unsplash.com/photo-1611532736597-de2d4265fba3?w=600&q=80', title: 'Design 4K 32"', subtitle: '99% sRGB, HDR', price: '$549', link: '/products/design-32', badge: '' },
     { image: 'https://images.unsplash.com/photo-1593640408182-31c70c8268f5?w=600&q=80', title: 'Value 24" 144Hz', subtitle: '1080p, 1ms', price: '$179', link: '/products/value-24', badge: 'Best value' },
-    { image: 'https://images.unsplash.com/photo-1586210579191-7b45ac67336c?w=600&q=80', title: 'Ultrawide 34" Curved', subtitle: '1440p, 100Hz', price: '$429', link: '/products/ultrawide-34', badge: '' },
+    { image: 'https://images.unsplash.com/photo-1666771409964-4656b1099ccb?q=80&w=60', title: 'Ultrawide 34" Curved', subtitle: '1440p, 100Hz', price: '$429', link: '/products/ultrawide-34', badge: '' },
     { image: 'https://images.unsplash.com/photo-1527689368864-3a821dbccc34?w=600&q=80', title: 'Pro 27" 4K', subtitle: 'Thunderbolt, 60Hz', price: '$699', link: '/products/pro-27', badge: '' }
   ];
 
@@ -199,8 +209,12 @@
     var params = new URLSearchParams(window.location.search);
     return {
       query: params.get('q') || params.get('query') || '',
-      utm_campaign: params.get('utm_campaign') || params.get('utm_content') || '',
-      referrer: document.referrer || '(none)'
+      utm_campaign: params.get('utm_campaign') || params.get('utm_content') || params.get('utm_source') || '',
+      referrer: document.referrer || '(none)',
+      pathname: window.location.pathname || '',
+      page_title: (document && document.title) ? document.title : '',
+      user_agent: (typeof navigator !== 'undefined' && navigator.userAgent) ? navigator.userAgent : '',
+      language: (typeof navigator !== 'undefined' && navigator.language) ? navigator.language : ''
     };
   }
 
@@ -215,8 +229,13 @@
   function resolveProvider() {
     var p = CONFIG.aiProvider;
     if (p === 'openai' && CONFIG.openaiApiKey) return 'openai';
+    if (p === 'openrouter' && CONFIG.openrouterApiKey) return 'openrouter';
     if (p === 'ollama') return 'ollama';
-    if (p === 'auto') return CONFIG.openaiApiKey ? 'openai' : 'ollama';
+    if (p === 'auto') {
+      if (CONFIG.openaiApiKey) return 'openai';
+      if (CONFIG.openrouterApiKey) return 'openrouter';
+      return 'ollama';
+    }
     return null;
   }
 
@@ -248,6 +267,29 @@
         return content || null;
       } catch (err) {
         if (CONFIG.debug) console.warn('OpenAI chat failed:', err.message);
+        return null;
+      }
+    }
+
+    if (provider === 'openrouter') {
+      try {
+        var base = (CONFIG.openrouterBaseUrl || '').replace(/\/$/, '') || 'https://api.openrouter.ai';
+        var resOR = await fetch(base + '/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + CONFIG.openrouterApiKey },
+          body: JSON.stringify({
+            model: CONFIG.openrouterModel,
+            messages: messages,
+            max_tokens: maxTokens,
+            temperature: options.temperature != null ? options.temperature : 0.35
+          })
+        });
+        if (!resOR.ok) throw new Error('OpenRouter ' + resOR.status);
+        var dataOR = await resOR.json();
+        var contentOR = dataOR.choices && dataOR.choices[0] && dataOR.choices[0].message && dataOR.choices[0].message.content;
+        return contentOR || null;
+      } catch (err) {
+        if (CONFIG.debug) console.warn('OpenRouter chat failed:', err.message);
         return null;
       }
     }
@@ -306,13 +348,40 @@
   function sanitizeGenerated(obj) {
     if (!obj || typeof obj !== 'object') return null;
     var out = {};
+    // allow extended layout styles including those we added
+    var allowedLayouts = ['soft','neo','cyber','minimal','modern','featuristic','artistic','compact'];
     GENERATED_KEYS.forEach(function (k) {
-      if (k === 'nav_links' && Array.isArray(obj[k])) {
-        out[k] = obj[k];
-      } else if (k === 'layout_style' && /^(soft|neo|cyber)$/.test(obj[k])) {
-        out[k] = obj[k];
-      } else if (typeof obj[k] === 'string' && obj[k].trim()) {
-        out[k] = obj[k].trim();
+      try {
+        if (k === 'nav_links' && Array.isArray(obj[k])) {
+          // validate nav links: array of {label, href} with relative hrefs
+          var safeNav = [];
+          obj[k].forEach(function (item) {
+            if (!item || typeof item !== 'object') return;
+            var label = typeof item.label === 'string' ? item.label.trim() : '';
+            var href = typeof item.href === 'string' ? item.href.trim() : '';
+            if (!label) return;
+            // prefer relative paths only
+            if (href && (href.indexOf('/') !== 0)) return;
+            safeNav.push({ label: label, href: href || '#' });
+          });
+          if (safeNav.length) out[k] = safeNav;
+        } else if (k === 'layout_style' && typeof obj[k] === 'string' && allowedLayouts.indexOf(obj[k]) !== -1) {
+          out[k] = obj[k];
+        } else if (typeof obj[k] === 'string' && obj[k].trim()) {
+          // limit lengths for safety
+          var v = obj[k].trim();
+          if (k === 'headline') v = v.substring(0, 120);
+          if (k === 'subheadline') v = v.substring(0, 240);
+          if (k === 'cta_text') v = v.substring(0, 60);
+          if (k === 'cta_link' || k === 'strip_cta_link') {
+            // only allow relative links
+            if (v.indexOf('/') === 0) out[k] = v; else out[k] = '';
+          } else {
+            out[k] = v;
+          }
+        }
+      } catch (e) {
+        if (CONFIG.debug) console.warn('sanitizeGenerated item failed for', k, e);
       }
     });
     return Object.keys(out).length ? out : null;
@@ -326,14 +395,14 @@
     var systemPrompt = [
       'You are a personalization engine for an e-commerce site selling computer monitors.',
       'Given a visitor\'s raw search or intent, you must:',
-      '(1) Classify intent into exactly ONE category: BUY_NOW, COMPARE, USE_CASE, BUDGET, GAMING, PROFESSIONAL, CREATIVE, FAMILY, EXPLORE, SUPPORT, DEALS, DEFAULT.',
-      '(2) Write a short "visitor_context" (1-3 sentences) describing their needs and what messaging would resonate.',
-      '(3) Choose layout_style: "soft" (calm, minimal, studio/creative/family), "neo" (modern, glass, gradient, compare/explore/pro), "cyber" (gaming, dark, bold).',
-      '(4) Generate tailored copy. Return ONLY a JSON object with these keys (all strings unless noted): intent, reason, visitor_context, layout_style, badge (short label or empty), headline, subheadline, cta_text, cta_link, section_heading, section_subheading, strip_heading, strip_subheading, strip_cta_text, strip_cta_link, nav_links (array of {label, href}, 3-5 items).',
-      'Headlines under 80 chars. Links use paths: /checkout, /compare, /collections/all, /deals, etc. No markdown.'
+      '(1) Classify intent into exactly ONE category: BUY_NOW, COMPARE, USE_CASE, BUDGET, GAMING, PROFESSIONAL, CREATIVE, FAMILY, EXPLORE, SUPPORT, DEALS, DEFAULT. Include a numeric "confidence" (0.0-1.0) for classification.',
+      '(2) Write a short "visitor_context" (1-3 sentences) describing their needs and what messaging would resonate. Use available context: query, utm_campaign/source, referrer, page_title, pathname, user_agent, language.',
+      '(3) Choose layout_style from: soft, neo, cyber, minimal, modern, featuristic, artistic, compact. Match tone to intent.',
+      '(4) Generate tailored copy. Return ONLY a JSON object with these keys (use strings unless noted): intent, confidence (number), reason, visitor_context, layout_style, badge, headline, subheadline, cta_text, cta_link, section_heading, section_subheading, strip_heading, strip_subheading, strip_cta_text, strip_cta_link, nav_links (array of {label, href}, 3-5 items).',
+      'Headlines under 80 chars. Use relative path links only (e.g. /collections/all). No markdown or extraneous text. Respond with valid JSON only.'
     ].join(' ');
 
-    var userContent = 'Visitor intent: "' + rawQuery.replace(/"/g, '\\"') + '". UTM: "' + (ctx.utm_campaign || '') + '". Referrer: ' + (ctx.referrer || 'none') + '.';
+    var userContent = 'Visitor intent: "' + rawQuery.replace(/"/g, '\\"') + '". UTM: "' + (ctx.utm_campaign || '') + '". Referrer: ' + (ctx.referrer || 'none') + '. Page: ' + (ctx.page_title || '') + ' Path: ' + (ctx.pathname || '') + ' UA: ' + (ctx.user_agent || '') + ' Lang: ' + (ctx.language || '');
 
     var content = await chatCompletion(
       [{ role: 'system', content: systemPrompt }, { role: 'user', content: userContent }],
@@ -358,7 +427,7 @@
     if (!hasAIProvider()) return null;
     var ctx = buildContextForOpenAI();
     if ((ctx.query || '').trim()) return null;
-    var systemPrompt = 'Classify visitor intent for a monitor e-commerce site. Return JSON: {"intent": "...", "reason": "..."}. Intent must be one of: BUY_NOW, COMPARE, USE_CASE, BUDGET, GAMING, PROFESSIONAL, CREATIVE, FAMILY, EXPLORE, SUPPORT, DEALS, DEFAULT.';
+    var systemPrompt = 'Classify visitor intent for a monitor e-commerce site. Use available context: query, utm_campaign/source, referrer, page_title, pathname, user_agent, language. Return ONLY JSON: {"intent": "...", "confidence": 0.0-1.0, "reason": "..."}. Intent must be one of: BUY_NOW, COMPARE, USE_CASE, BUDGET, GAMING, PROFESSIONAL, CREATIVE, FAMILY, EXPLORE, SUPPORT, DEALS, DEFAULT. Confidence should be a number between 0 and 1. No extra text.';
     var content = await chatCompletion(
       [{ role: 'system', content: systemPrompt }, { role: 'user', content: 'referrer: ' + ctx.referrer + ', utm: ' + ctx.utm_campaign }],
       CONFIG.openaiMaxTokens,
@@ -368,7 +437,9 @@
     var obj = parseJsonFromResponse(content);
     if (obj && obj.intent && VALID_INTENTS.indexOf(obj.intent) !== -1) {
       var provider = resolveProvider();
-      return { intent: obj.intent, signals: [(provider || 'ai') + ': ' + (obj.reason || '')] };
+      var signals = [(provider || 'ai') + ': ' + (obj.reason || '')];
+      if (typeof obj.confidence === 'number') signals.push('confidence:' + obj.confidence);
+      return { intent: obj.intent, signals: signals };
     }
     return null;
   }
@@ -650,6 +721,18 @@
         if (opts.openaiApiKey) {
           if (typeof window.PersonalizerConfig !== 'object') window.PersonalizerConfig = {};
           window.PersonalizerConfig.openaiApiKey = opts.openaiApiKey;
+        }
+        if (opts.openrouterApiKey) {
+          if (typeof window.PersonalizerConfig !== 'object') window.PersonalizerConfig = {};
+          window.PersonalizerConfig.openrouterApiKey = opts.openrouterApiKey;
+        }
+        if (opts.openrouterBaseUrl) {
+          if (typeof window.PersonalizerConfig !== 'object') window.PersonalizerConfig = {};
+          window.PersonalizerConfig.openrouterBaseUrl = opts.openrouterBaseUrl;
+        }
+        if (opts.openrouterModel) {
+          if (typeof window.PersonalizerConfig !== 'object') window.PersonalizerConfig = {};
+          window.PersonalizerConfig.openrouterModel = opts.openrouterModel;
         }
         if (CONFIG.autoRun) {
           if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', runWithTracking);

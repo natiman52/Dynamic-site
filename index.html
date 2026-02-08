@@ -227,9 +227,18 @@
 
   <!-- AI: OpenAI or Ollama. For Ollama run `ollama serve` and `ollama run <model>` first; serve this page from localhost to avoid CORS. -->
   <script>
+    // Configure your AI provider here. For OpenRouter usage, set `aiProvider: 'openrouter'`
+    // and provide your API key below. You can also keep `aiProvider: 'auto'` to prefer
+    // OpenAI first (if `openaiApiKey` is set), then OpenRouter, then Ollama.
     window.PersonalizerConfig = {
       openaiApiKey: '',
+      // Use 'openrouter' to force OpenRouter, 'openai', 'ollama', or 'auto'
       aiProvider: 'auto',
+      // OpenRouter (hosted) settings
+      openrouterApiKey: '',
+      openrouterBaseUrl: 'https://api.openrouter.ai',
+      openrouterModel: '',
+      // Ollama (local) fallback settings
       ollamaBaseUrl: 'http://localhost:11434',
       ollamaModel: 'qwen2.5-coder:3b',
       ollamaRequestTimeout: 120000,
@@ -237,7 +246,7 @@
     };
   </script>
   <script src="personalizer.js"></script>
-  <!-- <script>
+  <script>
     (function () {
       var statusEl = document.getElementById('personalizer-status');
       function setStatus(text) { if (statusEl) statusEl.textContent = text; }
@@ -270,6 +279,6 @@
         setStatus('');
       }
     })();
-  </script> -->
+  </script>
 </body>
 </html>
