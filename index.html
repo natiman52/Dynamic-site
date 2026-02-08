@@ -23,19 +23,6 @@
       <input type="text" id="intent-query" placeholder="e.g. need to buy my kid a monitor under 10k" class="flex-1 min-w-0 px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500">
       <button type="submit" id="intent-submit" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition whitespace-nowrap">Personalize</button>
     </form>
-    <span class="text-slate-500">or</span>
-    <div class="flex flex-wrap gap-2">
-      <button type="button" class="px-3 py-1 rounded-md bg-slate-700 hover:bg-slate-600 transition" data-persona="buy">Buy</button>
-      <button type="button" class="px-3 py-1 rounded-md bg-slate-700 hover:bg-slate-600 transition" data-persona="compare">Compare</button>
-      <button type="button" class="px-3 py-1 rounded-md bg-slate-700 hover:bg-slate-600 transition" data-persona="explore">Explore</button>
-      <button type="button" class="px-3 py-1 rounded-md bg-slate-700 hover:bg-slate-600 transition" data-persona="budget">Budget</button>
-      <button type="button" class="px-3 py-1 rounded-md bg-slate-700 hover:bg-slate-600 transition" data-persona="gaming">Gaming</button>
-      <button type="button" class="px-3 py-1 rounded-md bg-slate-700 hover:bg-slate-600 transition" data-persona="professional">Pro</button>
-      <button type="button" class="px-3 py-1 rounded-md bg-slate-700 hover:bg-slate-600 transition" data-persona="creative">Creative</button>
-      <button type="button" class="px-3 py-1 rounded-md bg-slate-700 hover:bg-slate-600 transition" data-persona="family">Family</button>
-      <button type="button" class="px-3 py-1 rounded-md bg-slate-700 hover:bg-slate-600 transition" data-persona="support">Support</button>
-      <button type="button" class="px-3 py-1 rounded-md bg-slate-700 hover:bg-slate-600 transition" data-persona="deals">Deals</button>
-    </div>
     <span id="personalizer-status" class="text-slate-500 ml-auto"></span>
     <div id="personalizer-context" class="w-full mt-2 text-xs text-slate-500 hidden" aria-hidden="true"></div>
   </div>
@@ -250,20 +237,12 @@
     };
   </script>
   <script src="personalizer.js"></script>
-  <script>
+  <!-- <script>
     (function () {
       var statusEl = document.getElementById('personalizer-status');
       function setStatus(text) { if (statusEl) statusEl.textContent = text; }
       var hasQuery = new URLSearchParams(window.location.search).get('q');
       if (hasQuery) setStatus('Personalizing…');
-
-      document.querySelectorAll('button[data-persona]').forEach(function (btn) {
-        btn.addEventListener('click', function () {
-          var p = this.getAttribute('data-persona');
-          if (window.Personalizer && window.Personalizer.simulate) window.Personalizer.simulate(p);
-          setStatus('Template: ' + p);
-        });
-      });
       var form = document.getElementById('intent-form');
       var input = document.getElementById('intent-query');
       if (form && input) {
@@ -291,6 +270,6 @@
         setStatus('');
       }
     })();
-  </script>
+  </script> -->
 </body>
 </html>

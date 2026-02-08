@@ -1,5 +1,5 @@
 /**
- * IntentFinder Personalizer — AI-only copy; layout from soft / neo / cyber themes.
+ * IntentFinder Personalizer — AI-only; layout from LAYOUTS.
  * Supports OpenAI and local Ollama: set aiProvider to 'openai', 'ollama', or 'auto'.
  * With Ollama: run `ollama serve` and set ollamaBaseUrl (default http://localhost:11434), ollamaModel (e.g. llama3.2).
  */
@@ -11,6 +11,10 @@
     enabled: true,
     assetBase: '',
     debug: true,
+    // If true, require a `q` or `query` URL parameter to run personalization.
+    requireQuery: true,
+    // If true, the script will auto-run on DOMContentLoaded. Set false to use as a plugin and call init()/run() manually.
+    autoRun: true,
     get openaiApiKey() {
       return (typeof window !== 'undefined' && window.PersonalizerConfig && window.PersonalizerConfig.openaiApiKey) || '';
     },
@@ -34,6 +38,17 @@
     get ollamaKeepAlive() {
       return (typeof window != 'undefined' && window.PersonalizerConfig && window.PersonalizerConfig.ollamaKeepAlive) || '10m';
     }
+  };
+
+  // Selectors used when injecting content. Can be overridden via init()
+  CONFIG.selectors = {
+    header: 'site-header',
+    hero: 'site-hero',
+    sectionHeading: 'section-heading',
+    sectionSubheading: 'section-subheading',
+    productGrid: 'product-grid',
+    strip: 'site-strip',
+    footer: 'site-footer'
   };
 
   // Expanded intents (categories for AI)
@@ -61,7 +76,7 @@
   // Intent → layout theme (from soft.html, neo.html, Cyber.html)
   var INTENT_TO_LAYOUT = {
     GAMING: 'cyber', PROFESSIONAL: 'neo', CREATIVE: 'soft', FAMILY: 'soft',
-    BUDGET: 'soft', DEALS: 'soft', COMPARE: 'neo', EXPLORE: 'neo', BUY_NOW: 'neo',
+    BUDGET: 'soft', DEALS: 'minimal', COMPARE: 'neo', EXPLORE: 'modern', BUY_NOW: 'neo',
     USE_CASE: 'neo', SUPPORT: 'soft', DEFAULT: 'neo'
   };
 
@@ -112,6 +127,42 @@
       card: '<article class="bg-slate-900 border border-slate-800 p-4 group hover:border-indigo-500 transition-all text-white"><div class="relative mb-4 overflow-hidden"><img src="{{card_image}}" class="grayscale group-hover:grayscale-0 transition duration-500 w-full aspect-video object-cover" alt="">{{card_badge}}</div><h3 class="text-lg font-bold mb-2" style="font-family:Orbitron,sans-serif">{{card_title}}</h3><p class="text-slate-500 text-sm mb-4">{{card_subtitle}}</p><div class="flex justify-between items-center"><span class="text-2xl font-bold text-indigo-400">{{card_price}}</span><a href="{{card_link}}" class="text-xs font-bold border-b-2 border-indigo-500 pb-1 hover:text-indigo-400">VIEW SPECS</a></div></article>',
       strip: '<section class="bg-indigo-600 text-white py-12"><div class="max-w-7xl mx-auto px-6 text-center"><h2 id="strip-heading" class="text-2xl font-bold mb-2">{{strip_heading}}</h2><p id="strip-subheading" class="text-indigo-100 mb-6 max-w-xl mx-auto">{{strip_subheading}}</p><a id="strip-cta" href="{{strip_cta_link}}" class="inline-block px-6 py-3 rounded-xl bg-white text-indigo-600 font-semibold hover:bg-indigo-50">{{strip_cta_text}}</a></div></section>',
       footer: '<div class="max-w-7xl mx-auto px-6 py-14 text-slate-400 bg-black border-t border-slate-800"><div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-10"><div><span class="font-bold text-white text-lg" style="font-family:Orbitron,sans-serif">MONITORHUB</span><p class="mt-3 text-sm">Elite displays for pros.</p></div><div><h4 class="font-semibold text-white mb-3">Gear</h4><ul class="space-y-2 text-sm"><li><a href="/collections/all" class="hover:text-white">Shop</a></li><li><a href="/compare" class="hover:text-white">Compare</a></li></ul></div><div><h4 class="font-semibold text-white mb-3">Support</h4><ul class="space-y-2 text-sm"><li><a href="/support" class="hover:text-white">Help</a></li></ul></div><div><h4 class="font-semibold text-white mb-3">Newsletter</h4><input type="email" placeholder="Email" class="w-full px-3 py-2 rounded bg-slate-800 border border-slate-700 text-white text-sm"><button type="button" class="mt-2 px-4 py-2 rounded bg-indigo-500 text-white text-sm">Join</button></div></div><div class="mt-12 pt-8 border-t border-slate-800 text-sm text-center">© 2026 MonitorHub</div></div>'
+    }
+    ,
+    minimal: {
+      header: '<div class="px-6 py-4 max-w-7xl mx-auto"><div class="flex items-center justify-between"><div class="font-bold text-lg">MonitorHub</div><nav class="flex gap-6 text-sm text-slate-600">{{nav_items}}</nav></div></div>',
+      hero: '<section class="max-w-4xl mx-auto px-6 py-16 text-center"><h1 id="headline" class="text-4xl font-extrabold text-slate-900 mb-4">{{headline}}</h1><p id="subheadline" class="text-slate-500 mb-6">{{subheadline}}</p><a id="cta" href="{{cta_link}}" class="inline-block px-6 py-3 bg-slate-900 text-white rounded-md">{{cta_text}}</a><img id="hero-image" src="{{hero_image}}" alt="" class="mt-8 w-full rounded-lg shadow-sm"></section>',
+      card: '<div class="p-4 bg-white rounded-lg shadow-sm"><img src="{{card_image}}" class="w-full rounded-md mb-4 object-cover" alt=""><h3 class="font-semibold">{{card_title}}</h3><p class="text-sm text-slate-500">{{card_subtitle}}</p><div class="mt-4 flex items-center justify-between"><span class="font-bold">{{card_price}}</span><a href="{{card_link}}" class="text-sm text-slate-700">Details</a></div></div>',
+      strip: '<section class="bg-slate-100 py-10"><div class="max-w-4xl mx-auto px-6 text-center"><h2 id="strip-heading" class="text-lg font-semibold mb-2">{{strip_heading}}</h2><p id="strip-subheading" class="text-slate-600 mb-4">{{strip_subheading}}</p><a id="strip-cta" href="{{strip_cta_link}}" class="inline-block px-4 py-2 bg-slate-900 text-white rounded">{{strip_cta_text}}</a></div></section>',
+      footer: '<div class="max-w-7xl mx-auto px-6 py-10 text-sm text-slate-500"><div class="flex justify-between"><div>© 2026 MonitorHub</div><div>{{nav_items}}</div></div></div>'
+    },
+    modern: {
+      header: '<div class="py-6 px-8 bg-white/60 backdrop-blur-sm border-b"><div class="max-w-7xl mx-auto flex items-center justify-between"><div class="font-black text-xl">MonitorHub</div><nav class="flex gap-8 text-xs font-medium uppercase">{{nav_items}}</nav></div></div>',
+      hero: '<section class="py-24 bg-gradient-to-r from-white to-slate-50"><div class="max-w-6xl mx-auto px-6 text-center"><h1 id="headline" class="text-5xl font-extrabold mb-4 bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-teal-500">{{headline}}</h1><p id="subheadline" class="text-slate-600 mb-8">{{subheadline}}</p><a id="cta" href="{{cta_link}}" class="inline-block px-8 py-3 bg-indigo-600 text-white rounded-md">{{cta_text}}</a><img id="hero-image" src="{{hero_image}}" alt="" class="mt-10 w-full rounded-lg shadow-lg"></div></section>',
+      card: '<div class="p-6 bg-white rounded-2xl shadow-lg"><img src="{{card_image}}" class="w-full rounded-xl mb-4 object-cover" alt=""><h3 class="text-lg font-bold">{{card_title}}</h3><p class="text-sm text-slate-500">{{card_subtitle}}</p><div class="mt-6 flex items-center justify-between"><span class="text-xl font-extrabold">{{card_price}}</span><a href="{{card_link}}" class="px-3 py-2 bg-indigo-50 text-indigo-700 rounded">View</a></div></div>',
+      strip: '<section class="py-12 bg-indigo-600 text-white"><div class="max-w-6xl mx-auto px-6 text-center"><h2 id="strip-heading" class="text-2xl font-bold mb-2">{{strip_heading}}</h2><p id="strip-subheading" class="text-indigo-100 mb-6">{{strip_subheading}}</p><a id="strip-cta" href="{{strip_cta_link}}" class="inline-block px-6 py-3 bg-white text-indigo-600 rounded">{{strip_cta_text}}</a></div></section>',
+      footer: '<div class="max-w-7xl mx-auto px-6 py-12 text-slate-400"><div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-8"><div><span class="font-bold text-white">MonitorHub</span><p class="mt-2 text-sm">Modern displays for every desk.</p></div><div><h4 class="font-semibold text-white mb-2">Shop</h4><ul class="space-y-2 text-sm">{{nav_items}}</ul></div></div><div class="mt-8 text-sm text-center">© 2026 MonitorHub</div></div>'
+    },
+    featuristic: {
+      header: '<div class="py-4 px-6 bg-white"><div class="max-w-7xl mx-auto flex items-center justify-between"><div class="font-bold">MonitorHub</div><nav class="text-sm text-slate-600">{{nav_items}}</nav></div></div>',
+      hero: '<section class="max-w-6xl mx-auto px-6 py-16"><div class="grid md:grid-cols-2 gap-8 items-center"><div><h1 id="headline" class="text-4xl font-extrabold mb-4">{{headline}}</h1><p id="subheadline" class="text-slate-600 mb-6">{{subheadline}}</p><a id="cta" href="{{cta_link}}" class="inline-block px-6 py-3 bg-indigo-600 text-white rounded">{{cta_text}}</a></div><div><img id="hero-image" src="{{hero_image}}" alt="" class="w-full rounded-lg shadow"></div></div></section>',
+      card: '<div class="p-5 bg-white rounded-lg shadow-sm"><h3 class="font-bold mb-2">{{card_title}}</h3><p class="text-sm text-slate-500 mb-3">{{card_subtitle}}</p><ul class="text-xs text-slate-600 space-y-1 mb-4"><li>• Feature-rich panels</li><li>• High color accuracy</li><li>• Multiple inputs</li></ul><div class="flex items-center justify-between"><span class="font-extrabold">{{card_price}}</span><a href="{{card_link}}" class="text-indigo-600">Details</a></div></div>',
+      strip: '<section class="py-10 bg-gradient-to-r from-slate-50 to-white"><div class="max-w-6xl mx-auto px-6 text-center"><h2 id="strip-heading" class="text-lg font-semibold mb-2">{{strip_heading}}</h2><p id="strip-subheading" class="text-slate-600 mb-4">{{strip_subheading}}</p><a id="strip-cta" href="{{strip_cta_link}}" class="inline-block px-4 py-2 bg-indigo-600 text-white rounded">{{strip_cta_text}}</a></div></section>',
+      footer: '<div class="max-w-7xl mx-auto px-6 py-10 text-sm text-slate-500"><div class="flex justify-between"><div>© 2026 MonitorHub</div><div>{{nav_items}}</div></div></div>'
+    },
+    artistic: {
+      header: '<div class="py-6 px-8 bg-amber-50"><div class="max-w-7xl mx-auto flex items-center justify-between"><div class="font-serif font-bold text-xl">MonitorHub</div><nav class="italic text-sm text-slate-700">{{nav_items}}</nav></div></div>',
+      hero: '<section class="py-24 bg-[url(https://images.unsplash.com/photo-1509223197845-458d87318791?w=1200&q=60)] bg-cover bg-center text-white"><div class="max-w-4xl mx-auto px-6 text-center backdrop-brightness-75 p-8 rounded-lg"><h1 id="headline" class="text-5xl font-extrabold mb-4">{{headline}}</h1><p id="subheadline" class="text-lg mb-6">{{subheadline}}</p><a id="cta" href="{{cta_link}}" class="inline-block px-6 py-3 bg-white text-indigo-700 rounded">{{cta_text}}</a></div></section>',
+      card: '<div class="p-6 bg-white/90 rounded-2xl shadow-md"><img src="{{card_image}}" class="w-full rounded-lg mb-4 object-cover" alt=""><h3 class="text-lg font-bold">{{card_title}}</h3><p class="text-sm text-slate-600">{{card_subtitle}}</p></div>',
+      strip: '<section class="py-12 bg-white"><div class="max-w-6xl mx-auto px-6 text-center"><h2 id="strip-heading" class="text-2xl font-semibold mb-2">{{strip_heading}}</h2><p id="strip-subheading" class="text-slate-600 mb-4">{{strip_subheading}}</p><a id="strip-cta" href="{{strip_cta_link}}" class="inline-block px-6 py-3 bg-indigo-600 text-white rounded">{{strip_cta_text}}</a></div></section>',
+      footer: '<div class="max-w-7xl mx-auto px-6 py-12 text-slate-500"><div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-6"><div><span class="font-bold">MonitorHub</span><p class="mt-2 text-sm">Design-forward displays.</p></div></div><div class="mt-6 text-sm text-center">© 2026 MonitorHub</div></div>'
+    },
+    compact: {
+      header: '<div class="px-4 py-3"><div class="max-w-7xl mx-auto flex items-center justify-between"><div class="font-semibold">MonitorHub</div><nav class="text-sm">{{nav_items}}</nav></div></div>',
+      hero: '<section class="py-12"><div class="max-w-4xl mx-auto px-4 text-center"><h1 id="headline" class="text-3xl font-bold mb-2">{{headline}}</h1><p id="subheadline" class="text-sm text-slate-600 mb-4">{{subheadline}}</p><a id="cta" href="{{cta_link}}" class="inline-block px-4 py-2 bg-slate-900 text-white rounded">{{cta_text}}</a></div></section>',
+      card: '<div class="p-3 bg-white rounded-lg shadow-sm"><img src="{{card_image}}" class="w-full rounded mb-3 object-cover" alt=""><h4 class="text-sm font-semibold">{{card_title}}</h4><div class="mt-2 flex items-center justify-between"><span class="text-sm font-bold">{{card_price}}</span><a href="{{card_link}}" class="text-xs">View</a></div></div>',
+      strip: '<section class="py-8 bg-slate-50"><div class="max-w-4xl mx-auto px-4 text-center"><h2 id="strip-heading" class="text-sm font-semibold mb-2">{{strip_heading}}</h2><p id="strip-subheading" class="text-sm text-slate-500 mb-3">{{strip_subheading}}</p><a id="strip-cta" href="{{strip_cta_link}}" class="inline-block px-3 py-2 bg-slate-900 text-white rounded text-sm">{{strip_cta_text}}</a></div></section>',
+      footer: '<div class="max-w-7xl mx-auto px-4 py-8 text-sm text-slate-500"><div class="flex justify-between"><div>© 2026 MonitorHub</div><div>{{nav_items}}</div></div></div>'
     }
   };
 
@@ -439,13 +490,13 @@
     };
 
     try {
-      var headerEl = document.getElementById('site-header');
-      var heroEl = document.getElementById('site-hero');
-      var sectionEl = document.getElementById('section-heading');
-      var sectionSubEl = document.getElementById('section-subheading');
-      var gridEl = document.getElementById('product-grid');
-      var stripEl = document.getElementById('site-strip');
-      var footerEl = document.getElementById('site-footer');
+      var headerEl = document.getElementById(CONFIG.selectors.header);
+      var heroEl = document.getElementById(CONFIG.selectors.hero);
+      var sectionEl = document.getElementById(CONFIG.selectors.sectionHeading);
+      var sectionSubEl = document.getElementById(CONFIG.selectors.sectionSubheading);
+      var gridEl = document.getElementById(CONFIG.selectors.productGrid);
+      var stripEl = document.getElementById(CONFIG.selectors.strip);
+      var footerEl = document.getElementById(CONFIG.selectors.footer);
 
       if (headerEl) headerEl.innerHTML = applyPlaceholders(layout.header, headerMap);
       if (heroEl) heroEl.innerHTML = applyPlaceholders(layout.hero, heroMap);
@@ -463,6 +514,46 @@
     }
   }
 
+  // Fullscreen loader helpers shown while personalization is in progress
+  function ensureLoaderEl() {
+    try {
+      var id = 'personalizer-loader';
+      var existing = document.getElementById(id);
+      if (existing) return existing;
+      var el = document.createElement('div');
+      el.id = id;
+      el.style.position = 'fixed';
+      el.style.inset = '0';
+      el.style.display = 'none';
+      el.style.alignItems = 'center';
+      el.style.justifyContent = 'center';
+      el.style.background = 'rgba(0,0,0,0.6)';
+      el.style.zIndex = '99999';
+      el.style.backdropFilter = 'blur(4px)';
+      el.innerHTML = '<div style="text-align:center;color:#fff;max-width:90%;padding:12px;"><div style="width:56px;height:56px;margin:0 auto 12px;border:4px solid rgba(255,255,255,0.15);border-top-color:#fff;border-radius:50%;animation:pf-spin 1s linear infinite"></div><div style="font-weight:700">Personalizing…</div></div>';
+      var styleId = 'personalizer-loader-style';
+      if (!document.getElementById(styleId)) {
+        var style = document.createElement('style');
+        style.id = styleId;
+        style.appendChild(document.createTextNode('@keyframes pf-spin { to { transform: rotate(360deg); } }'));
+        document.head.appendChild(style);
+      }
+      document.body.appendChild(el);
+      return el;
+    } catch (e) {
+      if (CONFIG.debug) console.warn('Loader create failed:', e);
+      return null;
+    }
+  }
+
+  function showLoader() {
+    try { var el = ensureLoaderEl(); if (el) el.style.display = 'flex'; } catch (e) { if (CONFIG.debug) console.warn('showLoader failed:', e); }
+  }
+
+  function hideLoader() {
+    try { var el = document.getElementById('personalizer-loader'); if (el) el.style.display = 'none'; } catch (e) { if (CONFIG.debug) console.warn('hideLoader failed:', e); }
+  }
+
   var lastDecision = null;
   var onReadyCallbacks = [];
 
@@ -471,6 +562,21 @@
       onReadyCallbacks.forEach(function (cb) { cb(); });
       return Promise.resolve();
     }
+    // If configured to require a query param and none exists, skip personalization.
+    try {
+      var params = new URLSearchParams(window.location.search);
+      var q = (params.get('q') || params.get('query') || '').trim();
+      if (CONFIG.requireQuery && !q) {
+        if (CONFIG.debug) console.log('Personalizer: skipping because no query present and requireQuery=true');
+        onReadyCallbacks.forEach(function (cb) { cb(); });
+        return Promise.resolve();
+      }
+    } catch (e) {
+      if (CONFIG.debug) console.warn('Personalizer: query check failed', e);
+    }
+
+    // show full-screen loader while personalization runs
+    try { showLoader(); } catch (e) { if (CONFIG.debug) console.warn('showLoader call failed:', e); }
     return detectIntent()
       .then(function (intentResult) {
         if (!intentResult.generatedContent && hasAIProvider() && intentResult.intent) {
@@ -490,6 +596,7 @@
         if (CONFIG.debug) console.warn('Personalizer error:', e);
       })
       .then(function () {
+        try { hideLoader(); } catch (e) { if (CONFIG.debug) console.warn('hideLoader call failed:', e); }
         onReadyCallbacks.forEach(function (cb) { cb(); });
       });
   }
@@ -506,10 +613,12 @@
     });
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', runWithTracking);
-  } else {
-    runWithTracking();
+  if (CONFIG.autoRun) {
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', runWithTracking);
+    } else {
+      runWithTracking();
+    }
   }
 
   var personaToIntent = { buy: 'BUY_NOW', compare: 'COMPARE', explore: 'EXPLORE', budget: 'BUDGET', gaming: 'GAMING', professional: 'PROFESSIONAL', creative: 'CREATIVE', family: 'FAMILY', support: 'SUPPORT', deals: 'DEALS', usecase: 'USE_CASE' };
@@ -528,6 +637,26 @@
     PRODUCTS: PRODUCTS,
     VALID_INTENTS: VALID_INTENTS,
     onReady: function (cb) { if (typeof cb === 'function') onReadyCallbacks.push(cb); },
+    init: function (opts) {
+      try {
+        if (!opts || typeof opts !== 'object') opts = {};
+        if (opts.selectors && typeof opts.selectors === 'object') {
+          Object.keys(opts.selectors).forEach(function (k) { if (opts.selectors[k]) CONFIG.selectors[k] = opts.selectors[k]; });
+        }
+        if (typeof opts.requireQuery === 'boolean') CONFIG.requireQuery = !!opts.requireQuery;
+        if (typeof opts.autoRun === 'boolean') CONFIG.autoRun = !!opts.autoRun;
+        if (typeof opts.debug === 'boolean') CONFIG.debug = !!opts.debug;
+        if (opts.assetBase) CONFIG.assetBase = opts.assetBase;
+        if (opts.openaiApiKey) {
+          if (typeof window.PersonalizerConfig !== 'object') window.PersonalizerConfig = {};
+          window.PersonalizerConfig.openaiApiKey = opts.openaiApiKey;
+        }
+        if (CONFIG.autoRun) {
+          if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', runWithTracking);
+          else runWithTracking();
+        }
+      } catch (e) { if (CONFIG.debug) console.warn('Personalizer.init failed:', e); }
+    },
     simulate: function (persona) {
       var intent = personaToIntent[persona] || 'DEFAULT';
       var self = this;
